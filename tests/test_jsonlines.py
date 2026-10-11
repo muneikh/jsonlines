@@ -7,10 +7,10 @@ import collections
 import io
 import json
 import tempfile
+from unittest.mock import patch
 
 import jsonlines
 import pytest
-
 
 SAMPLE_BYTES = b'{"a": 1}\n{"b": 2}\n'
 SAMPLE_TEXT = SAMPLE_BYTES.decode("utf-8")
@@ -298,6 +298,30 @@ def test_open_and_append_writing() -> None:
             nbytes = writer.write(456)
             assert nbytes == len(str(456)) + 1
         assert fp.read() == b"123\n456\n"
+
+
+@pytest.mark.parametrize("error", [ValueError("encoder failed"), KeyboardInterrupt()])
+def test_open_closes_file_when_encoder_initialization_fails(
+    error: BaseException,
+) -> None:
+    fp = io.StringIO()
+
+    def dumps(obj: object) -> str:
+        raise error
+
+    with patch("jsonlines.jsonlines.builtins.open", return_value=fp):
+        with pytest.raises(type(error)) as excinfo:
+            jsonlines.open("output.jsonl", mode="w", dumps=dumps)
+    assert excinfo.value is error
+    assert fp.closed
+
+
+def test_open_closes_file_when_reader_initialization_fails() -> None:
+    fp = io.StringIO()
+    with patch("jsonlines.jsonlines.builtins.open", return_value=fp):
+        with pytest.raises(TypeError):
+            jsonlines.open("input.jsonl", compact=True)
+    assert fp.closed
 
 
 def test_open_invalid_mode() -> None:
